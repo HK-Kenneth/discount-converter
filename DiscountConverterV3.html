@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=300px">
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+<style>
+table{
+	table-layout: fixed;
+}
+.my-input-box{
+	padding: 3px 6px;
+	display: inline;
+}
+
+.half-padding {
+	padding: 3px 6px;
+}
+
+.inline-display {
+	display: inline;
+}
+
+#background{
+    position:absolute;
+    z-index:0;
+    background:white;
+    display:block;
+    min-height:50%; 
+    min-width:50%;
+    color:yellow;
+	top: 5%;
+}
+
+#content{
+    position:relative;
+    z-index:1;
+}
+
+.bg-text
+{
+    color:lightgrey;
+    font-size:70px;
+    transform:rotate(335deg);
+    -webkit-transform:rotate(335deg);
+}
+</style>
+</head>
+<body>
+<script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+<script>
+$(document).ready(function () {
+    var allInputSelectors = [
+        "#txtOriginalPrice",
+        "#txtDiscount",
+        "#txtMinus",
+        "#txtPercOff",
+        "#txtDiscountPrice",
+        "#txtDollarToPoint_Dollar",
+        "#txtDollarToPoint_Point",
+        "#txtPointToDollar_Point",
+        "#txtPointToDollar_Dollar"
+    ];
+
+    function round2(value) {
+        return Math.round((value + Number.EPSILON) * 100) / 100;
+    }
+
+    function readNumber(selector) {
+        var raw = $(selector).val().trim();
+
+        if (raw === "") {
+            return NaN;
+        }
+
+        var value = Number(raw);
+
+        return Number.isFinite(value) ? value : NaN;
+    }
+
+    /*
+     * 接受以下輸入：
+     * 8   = 8折
+     * 8.5 = 8.5折
+     * 80  = 8折
+     * 85  = 8.5折
+     * 100 = 10折
+     */
+    function normalizeDiscount(value) {
+        var discount = Math.min(value, 100);
+
+        if (discount > 10) {
+            discount = discount / 10;
+        }
+
+        return round2(discount);
+    }
+
+    function discountFromPercent(percOff) {
+        return round2((100 - percOff) / 10);
+    }
+
+    function hideResults() {
+        $("#divResult").css("visibility", "hidden");
+        $("#divResultPointDollar").css("visibility", "hidden");
+    }
+
+    function clearValidation() {
+        $(allInputSelectors.join(",")).removeClass("is-invalid");
+    }
+
+    function markInvalid(selectors) {
+        selectors.forEach(function (selector) {
+            $(selector).addClass("is-invalid");
+        });
+    }
+
+    function showResult(originalPrice, discount, minus, percOff, discountPrice) {
+        $("#lblOriginalPrice").text(round2(originalPrice));
+        $("#lblDiscount").text(round2(discount));
+        $("#lblMinus").text(round2(minus));
+        $("#lblPercOff").text(round2(percOff));
+        $("#lblDiscountPrice").text(round2(discountPrice));
+
+        $("#divResult").css("visibility", "visible");
+    }
+
+    function calculatePoints(discountPrice) {
+        var selectors = [
+            "#txtDollarToPoint_Dollar",
+            "#txtDollarToPoint_Point",
+            "#txtPointToDollar_Point",
+            "#txtPointToDollar_Dollar"
+        ];
+
+        var anyEntered = selectors.some(function (selector) {
+            return $(selector).val().trim() !== "";
+        });
+
+        /*
+         * 積分欄全部冇填：
+         * 正常跳過積分計算。
+         */
+        if (!anyEntered) {
+            $("#divResultPointDollar").css("visibility", "hidden");
+            return;
+        }
+
+        var dollarToPointDollar = readNumber("#txtDollarToPoint_Dollar");
+        var dollarToPointPoint = readNumber("#txtDollarToPoint_Point");
+        var pointToDollarPoint = readNumber("#txtPointToDollar_Point");
+        var pointToDollarDollar = readNumber("#txtPointToDollar_Dollar");
+
+        /*
+         * 「幾多蚊儲分」及「幾多分換錢」
+         * 兩個分母必須大過 0。
+         */
+        var pointValuesValid = Number.isFinite(dollarToPointDollar) && dollarToPointDollar > 0 && Number.isFinite(dollarToPointPoint) && dollarToPointPoint >= 0 
+			&& Number.isFinite(pointToDollarPoint) && pointToDollarPoint > 0 && Number.isFinite(pointToDollarDollar) && pointToDollarDollar >= 0;
+
+        if (!pointValuesValid) {
+            selectors.forEach(function (selector) {
+                var value = readNumber(selector);
+
+                if (!Number.isFinite(value) || value < 0) {
+                    $(selector).addClass("is-invalid");
+                }
+            });
+
+            if (!(dollarToPointDollar > 0)) {
+                $("#txtDollarToPoint_Dollar").addClass("is-invalid");
+            }
+
+            if (!(pointToDollarPoint > 0)) {
+                $("#txtPointToDollar_Point").addClass("is-invalid");
+            }
+
+            $("#divResultPointDollar").css("visibility", "hidden");
+
+            return;
+        }
+
+        var earnedPoints = discountPrice / dollarToPointDollar * dollarToPointPoint;
+        var pointDollar = earnedPoints / pointToDollarPoint * pointToDollarDollar;
+        var netPrice = discountPrice - pointDollar;
+
+        $("#lblPointDollar").text(round2(pointDollar));
+        $("#lblNetPrice").text(round2(netPrice));
+
+        $("#divResultPointDollar").css("visibility", "visible");
+    }
+
+    /*
+     * 清除
+     */
+    $("#btnClear").click(function () {
+        $(allInputSelectors.join(",")).val("");
+
+        clearValidation();
+        hideResults();
+
+        $(
+            "#lblOriginalPrice, " +
+            "#lblDiscount, " +
+            "#lblMinus, " +
+            "#lblPercOff, " +
+            "#lblDiscountPrice, " +
+            "#lblPointDollar, " +
+            "#lblNetPrice"
+        ).text("");
+
+        $("#txtOriginalPrice").focus();
+    });
+
+    /*
+     * 計算
+     */
+    $("#discountForm").on("submit", function (event) {
+        event.preventDefault();
+
+        clearValidation();
+        hideResults();
+
+        var originalPrice = readNumber("#txtOriginalPrice");
+        var discount = readNumber("#txtDiscount");
+        var minus = readNumber("#txtMinus");
+        var percOff = readNumber("#txtPercOff");
+        var discountPrice = readNumber("#txtDiscountPrice");
+
+        var inputPairs = [
+            {selector: "#txtOriginalPrice", value: originalPrice},
+            {selector: "#txtDiscount", value: discount},
+            {selector: "#txtMinus", value: minus},
+            {selector: "#txtPercOff", value: percOff},
+            {selector: "#txtDiscountPrice", value: discountPrice}
+        ];
+
+        /*
+         * 唔接受負數。
+         */
+        var hasNegativeValue = false;
+
+        inputPairs.forEach(function (item) {
+            if (Number.isFinite(item.value) && item.value < 0) {
+                $(item.selector).addClass("is-invalid");
+                hasNegativeValue = true;
+            }
+        });
+
+        if (hasNegativeValue) {
+            return;
+        }
+
+        var hasOriginalPrice = Number.isFinite(originalPrice);
+        var hasDiscountPrice = Number.isFinite(discountPrice);
+
+        /*
+         * 原價及特價至少要有其中一個。
+         *
+         * Number.isFinite(0) 係 true，
+         * 所以特價輸入 $0 都唔會再被當成空白。
+         */
+        if (!hasOriginalPrice && !hasDiscountPrice) {
+            markInvalid(["#txtOriginalPrice", "#txtDiscountPrice"]);
+
+            return;
+        }
+
+        var methodInputs;
+
+        /*
+         * 有原價：
+         * 可用折數、減價、% off 或特價計算。
+         */
+        if (hasOriginalPrice) {
+            methodInputs = [
+                {selector: "#txtDiscount", value: discount},
+                {selector: "#txtMinus", value: minus},
+                {selector: "#txtPercOff", value: percOff},
+                {selector: "#txtDiscountPrice", value: discountPrice}
+            ];
+        } else {
+            /*
+             * 冇原價但有特價：
+             * 可用折數、減價或 % off 反推原價。
+             */
+            methodInputs = [
+                {selector: "#txtDiscount", value: discount},
+                {selector: "#txtMinus", value: minus},
+                {selector: "#txtPercOff", value: percOff}
+            ];
+        }
+
+        var enteredMethods =
+            methodInputs.filter(function (item) {
+                return Number.isFinite(item.value);
+            });
+
+        /*
+         * 冇輸入任何計算方法。
+         */
+        if (enteredMethods.length === 0) {
+            markInvalid(
+                methodInputs.map(function (item) {
+                    return item.selector;
+                })
+            );
+
+            return;
+        }
+
+        /*
+         * 舊版同時輸入多項時，
+         * 會靜靜只採用第一項。
+         *
+         * 新版要求只輸入一種計算方法，
+         * 避免例如同時輸入8折及減$50但結果令人誤會。
+         */
+        if (enteredMethods.length > 1) {
+            markInvalid(
+                enteredMethods.map(function (item) {
+                    return item.selector;
+                })
+            );
+
+            return;
+        }
+
+        var selectedMethod = enteredMethods[0].selector;
+
+        var originalPriceOut;
+        var discountOut;
+        var minusOut;
+        var percOffOut;
+        var discountPriceOut;
+
+        /*
+         * ==================================================
+         * 已知原價
+         * ==================================================
+         */
+        if (hasOriginalPrice) {
+            originalPriceOut = originalPrice;
+
+            /*
+             * 原價 + 折數
+             */
+            if (selectedMethod === "#txtDiscount") {
+                discountOut = normalizeDiscount(discount);
+                percOffOut = round2(100 - discountOut * 10);
+                discountPriceOut = round2(originalPriceOut * discountOut / 10);
+                minusOut = round2(originalPriceOut - discountPriceOut);
+
+            /*
+             * 原價 + 減幾多錢
+             */
+            } else if (selectedMethod === "#txtMinus") {
+                minusOut = Math.min(minus, originalPriceOut);
+                discountPriceOut = round2(originalPriceOut - minusOut);
+                percOffOut = originalPriceOut === 0 ? 0 : round2( minusOut / originalPriceOut * 100 );
+                discountOut = discountFromPercent(percOffOut);
+
+            /*
+             * 原價 + % off
+             */
+            } else if (selectedMethod === "#txtPercOff") {
+                percOffOut = Math.min(percOff, 100);
+                discountOut = discountFromPercent(percOffOut);
+                discountPriceOut = round2(originalPriceOut * discountOut / 10);
+                minusOut = round2(originalPriceOut - discountPriceOut);
+
+            /*
+             * 原價 + 特價
+             */
+            } else {
+                discountPriceOut = Math.min(discountPrice, originalPriceOut);
+                minusOut = round2(originalPriceOut - discountPriceOut);
+                percOffOut = originalPriceOut === 0 ? 0 : round2(minusOut / originalPriceOut * 100);
+                discountOut = discountFromPercent(percOffOut);
+            }
+
+        /*
+         * ==================================================
+         * 已知特價，反推原價
+         * ==================================================
+         */
+        } else {
+            discountPriceOut = discountPrice;
+
+            /*
+             * 特價 + 折數
+             */
+            if (selectedMethod === "#txtDiscount") {
+                discountOut = normalizeDiscount(discount);
+
+                /*
+                 * 0折即100% off。
+                 * 無法單靠特價反推唯一原價。
+                 */
+                if (discountOut <= 0) {
+                    markInvalid(["#txtDiscount"]);
+                    return;
+                }
+
+                percOffOut = round2(100 - discountOut * 10);
+                originalPriceOut = round2(discountPriceOut / (discountOut / 10));
+                minusOut = round2(originalPriceOut - discountPriceOut);
+
+            /*
+             * 特價 + 減幾多錢
+             */
+            } else if (selectedMethod === "#txtMinus") {
+                minusOut = minus;
+                originalPriceOut = round2(discountPriceOut + minusOut);
+                percOffOut = originalPriceOut === 0 ? 0 : round2( minusOut / originalPriceOut * 100);
+                discountOut = discountFromPercent(percOffOut);
+
+            /*
+             * 特價 + % off
+             */
+            } else {
+                percOffOut = Math.min(percOff, 100);
+
+                /*
+                 * 100% off 時，
+                 * 無法用特價反推唯一原價。
+                 */
+                if (percOffOut >= 100) {
+                    markInvalid(["#txtPercOff"]);
+                    return;
+                }
+
+                discountOut = discountFromPercent(percOffOut);
+                originalPriceOut = round2(discountPriceOut / (1 - percOffOut / 100));
+                minusOut = round2(originalPriceOut - discountPriceOut);
+            }
+        }
+
+        showResult(originalPriceOut, discountOut, minusOut, percOffOut, discountPriceOut);
+
+        calculatePoints(discountPriceOut);
+
+        $("#btnApply").focus();
+    });
+});
+</script>
+<div style='width: 270px; margin:0 auto;'>
+<div id="background">
+<p class="bg-text">諭專用</p>
+<br>
+<p class="bg-text">諭專用</p>
+<br>
+<p class="bg-text">諭專用</p>
+</div>
+<div id="content">
+<div style='border: 2px solid #28a745; padding: 2px;'>
+<form id="discountForm" novalidate>
+
+<table style='width: 100%' id='tblEntry'>
+<colgroup>
+	<col style='width: 17%;'>
+	<col style='width: 16%;'>
+	<col style='width: 17%;'>
+	<col style='width: 17%;'>
+	<col style='width: 17%;'>
+	<col style='width: 16%;'>
+</colgroup>
+<tbody>
+<tr>
+<td colspan='2' style='text-align: right;'><label>原價 $</label></td>
+<td colspan='4'><input type='number' min='0' step='any' class="form-control my-input-box" id='txtOriginalPrice' name='txtOriginalPrice' style='width:120px;'></td>
+</tr>
+<tr>
+<td colspan='2'><input type='number' min='0' step='any' class="form-control my-input-box" id='txtDiscount' name='txtDiscount'></td>
+<td style='text-align: left;'><label>折</label></td>
+<td colspan='2'><input type='number' min='0' step='any' class="form-control my-input-box" id='txtPercOff' name='txtPercOff'></td>
+<td style='text-align: left;'><label>% off</label></td>
+</tr>
+<tr>
+<td colspan='2' style='text-align: right;'><label>減 $</label></td>
+<td colspan='4'><input type='number' min='0' step='any' class="form-control my-input-box" id='txtMinus' name='txtMinus' style='width:120px;'></td>
+</tr>
+<tr>
+<td colspan='3'>
+<input type='number' min='0' step='any' class="form-control my-input-box" id='txtDollarToPoint_Dollar' name='txtDollarToPoint_Dollar' style='width:45px;' placeholder='$'>
+<span>儲</span>
+<input type='number' min='0' step='any' class="form-control my-input-box" id='txtDollarToPoint_Point' name='txtDollarToPoint_Point' style='width:45px;' placeholder='分'>
+</td>
+<td colspan='3' style='text-align: right;'>
+<input type='number' min='0' step='any' class="form-control my-input-box" id='txtPointToDollar_Point' name='txtPointToDollar_Point' style='width:45px;' placeholder='分'>
+<span>換</span>
+<input type='number' min='0' step='any' class="form-control my-input-box" id='txtPointToDollar_Dollar' name='txtPointToDollar_Dollar' style='width:45px;' placeholder='$'>
+</td>
+</tr>
+<tr>
+<td colspan='2' style='text-align: right;'><label>特價 $</label></td>
+<td colspan='4'><input type='number' min='0' step='any' class="form-control my-input-box" id='txtDiscountPrice' name='txtDiscountPrice' style='width:120px;'></td>
+</tr>
+</tbody>
+</table>
+
+
+<table style='width: 100%'>
+<col span="1" style='width: 50%;'>
+<col span="1" style='width: 50%;'>
+<tbody>
+<tr>
+<td style='text-align: center;'><input type='button' class="btn btn-warning" id='btnClear' name='btnClear' value='清除'></td>
+<td style='text-align: center;'><input type='submit' class="btn btn-primary" id='btnApply' name='btnApply' value='應用'></td>
+</tr>
+</tbody>
+</table>
+
+</form>
+</div>
+<br>
+<div id='divResult' style='border: 2px solid #007bff; padding: 2px; visibility:hidden;' >
+<table style='width: 100%' id='tblOutput'>
+<colgroup>
+	<col style='width: 17%;' />
+	<col style='width: 16%;' />
+	<col style='width: 17%;' />
+	<col style='width: 17%;' />
+	<col style='width: 17%;' />
+	<col style='width: 16%;' />
+</colgroup>
+<tbody>
+<tr>
+<td colspan='2' style='text-align: right;'><label>原價 $</label></td>
+<td colspan='4'><label id='lblOriginalPrice' name='lblOriginalPrice' style='width:120px;'></label></td>
+</tr>
+<tr>
+<td style='text-align: right;'><label id='lblDiscount' name='lblDiscount'></label></td>
+<td style=''><label>折</label></td>
+<td style='text-align: right;'><label id='lblPercOff' name='lblPercOff'></label></td>
+<td style=''><label>% off</label></td>
+<td style='text-align: right;'><label>減 $</label></td>
+<td style=''><label id='lblMinus' name='lblMinus' style='width:100px;'></label></td>
+</tr>
+<tr>
+<td colspan='2' style='text-align: right;'><label>特價 $</label></td>
+<td colspan='4'><label id='lblDiscountPrice' name='lblDiscountPrice' style='width:120px;'></label></td>
+</tr>
+</tbody>
+</table>
+<div id='divResultPointDollar' style='visibility:hidden;'>
+<table style='width: 100%' id='tblOutputPointDollar'>
+<colgroup>
+	<col style='width: 17%;' />
+	<col style='width: 16%;' />
+	<col style='width: 17%;' />
+	<col style='width: 17%;' />
+	<col style='width: 17%;' />
+	<col style='width: 16%;' />
+</colgroup>
+<tbody>
+<tr>
+<td colspan='2' style='text-align: right;'><label>儲分換錢 $</label></td>
+<td colspan='4'><label id='lblPointDollar' name='lblPointDollar' style='width:120px;'></label></td>
+</tr>
+<tr>
+<td colspan='2' style='text-align: right;'><label>總值 $</label></td>
+<td colspan='4'><label id='lblNetPrice' name='lblNetPrice' style='width:120px;'></label></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>
